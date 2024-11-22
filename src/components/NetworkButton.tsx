@@ -23,7 +23,7 @@ const NetworkStatusIcon: React.FC<{ status: string }> = ({ status }) => {
  *
  * @returns A React element representing the network button.
  */
-const NetworkButton: React.FC<{ network: Network, onClick: () => void }> = ({ network, onClick }) => {
+const NetworkButton: React.FC<{ network: Network, onClick: () => void, disabled: boolean }> = ({ network, onClick, disabled }) => {
   const name = network.name ? network.name : network.status;
 
   return (
@@ -35,7 +35,7 @@ const NetworkButton: React.FC<{ network: Network, onClick: () => void }> = ({ ne
       icon={<NetworkStatusIcon status={network.status} />}
       childrenLayout='inline'
     >
-      <DialogButton onClick={onClick} style={{ minWidth: 'unset', padding: '10px', lineHeight: '12px' }}>
+      <DialogButton onClick={onClick} style={{ minWidth: 'unset', padding: '10px', lineHeight: '12px' }}> disabled={disabled}
         <FaGear />
       </DialogButton>
     </Field>
