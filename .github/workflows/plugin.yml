@@ -27,7 +27,7 @@ jobs:
       run: |
         echo "::group::Building plugin $plugin"
 
-        sudo $(which decky) plugin build -b -o ./out
+        sudo $(which decky) plugin build -b -s decky-zerotier -o ./out
 
         echo "::endgroup::"
     
