@@ -1,7 +1,6 @@
 import os
 import json
-import asyncio
-from subprocess import CalledProcessError
+import subprocess
 
 # The decky plugin module is located at decky-loader/plugin
 # For easy intellisense checkout the decky-loader code one directory up
@@ -18,7 +17,7 @@ env['LD_LIBRARY_PATH'] = '/usr/lib:/usr/lib64'
 
 class Plugin:
     @staticmethod
-    async def zerotier_cli(command: list[str]) -> tuple[bytes, bytes]:
+    async def zerotier_cli(command: list[str]) -> tuple[str, str]:
         """
         Executes the ZeroTier-CLI command with the provided arguments.
 
@@ -33,25 +32,24 @@ class Plugin:
         """
         cmd = [ZT_ONE, '-q', '-j', f'-D{ZT_HOME}', *command]
 
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-            env=env
+        proc = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            env=env,
+            check=True,
+            text=True,
         )
-        
-        stdout, stderr = await proc.communicate()
 
         if proc.returncode == 0:
             decky.logger.info(' '.join(cmd))
             decky.logger.info(f'ZeroTier-CLI exited with code {proc.returncode}')
-            decky.logger.info(stdout.decode('utf-8'))
+            decky.logger.info(proc.stdout)
         else:
             decky.logger.error(f'ZeroTier-CLI exited with code {proc.returncode}')
-            decky.logger.error(stdout.decode('utf-8'))
-            raise CalledProcessError(proc.returncode, cmd, stdout=stdout, stderr=stderr)
+            decky.logger.error(proc.stderr)
 
-        return stdout, stderr
+        return proc.stdout, proc.stderr
 
 
     @staticmethod
@@ -125,7 +123,7 @@ class Plugin:
         CalledProcessError: If the ZeroTier-CLI command returns a non-zero exit code.
         """
         stdout, _ = await self.zerotier_cli(['info'])
-        return json.loads(stdout.decode('utf-8'))
+        return json.loads(stdout)
 
 
     async def list_networks(self) -> list[dict]:
@@ -182,7 +180,7 @@ class Plugin:
         CalledProcessError: If the ZeroTier-CLI command returns a non-zero exit code.
         """
         stdout, _ = await self.zerotier_cli(['listnetworks'])
-        networks = json.loads(stdout.decode('utf-8'))
+        networks = json.loads(stdout)
 
         if os.path.exists(ZT_NETCONF):
             with open(ZT_NETCONF, 'r') as f:
@@ -220,7 +218,7 @@ class Plugin:
         CalledProcessError: If the ZeroTier-CLI command returns a non-zero exit code.
         """
         stdout, _ = await self.zerotier_cli(['join', network_id])
-        decky.logger.info(f'Joined network {network_id}: {stdout.decode("utf-8").strip()}')
+        decky.logger.info(f'Joined network {network_id}: {stdout.strip()}')
 
         return await self.list_networks()
     
@@ -242,7 +240,7 @@ class Plugin:
         """
         networks = await self.list_networks()
         stdout, _ = await self.zerotier_cli(['leave', network_id])
-        decky.logger.info(f'Left network {network_id}: {stdout.decode("utf-8").strip()}')
+        decky.logger.info(f'Left network {network_id}: {stdout.strip()}')
 
         networks_ = []
         for net in networks:
@@ -273,7 +271,7 @@ class Plugin:
         CalledProcessError: If the ZeroTier-CLI command returns a non-zero exit code.
         """
         stdout, _ = await self.zerotier_cli(['leave', network_id])
-        decky.logger.info(f'Forgotten network {network_id}: {stdout.decode("utf-8").strip()}')
+        decky.logger.info(f'Forgotten network {network_id}: {stdout.strip()}')
 
         if os.path.exists(ZT_NETCONF):
             with open(ZT_NETCONF, 'r') as f:
@@ -306,7 +304,7 @@ class Plugin:
         CalledProcessError: If the ZeroTier-CLI command returns a non-zero exit code.
         """
         stdout, _ = await self.zerotier_cli(['set', network_id, f'{option}={int(value)}'])
-        decky.logger.info(f'Update network {network_id}: {stdout.decode("utf-8").strip()}')
+        decky.logger.info(f'Update network {network_id}: {stdout.strip()}')
 
         return await self.list_networks()
         
@@ -314,31 +312,35 @@ class Plugin:
     async def _main(self) -> None:
         decky.logger.info('Starting ZeroTier...')
 
-        cmd = [ZT_ONE, ZT_HOME]
+        cmd = [ZT_ONE, "-d", ZT_HOME]
         decky.logger.info(' '.join(cmd))
         
-        self.process = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-            env=env
+        self.process = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            env=env,
+            check=True,
+            text=True,
         )
-
-        await self._read_stream(self.process.stdout, decky.logger.info)
-        
-        self.process.wait()
 
 
     # Function called first during the unload process, utilize this to handle your plugin being stopped, but not
     # completely removed
     async def _unload(self) -> None:
-        decky.logger.info('Stopping ZeroTier...')
+        pid_file_path = os.path.join(ZT_HOME, "zerotier-one.pid")
+        if not os.path.exists(pid_file_path):
+            return
+        with open(pid_file_path, "r") as file:
+            pid = file.read().strip()
+        subprocess.run(["kill", pid])
+        decky.logger.info(f"Stopping ZeroTier PID {pid}...")
 
 
     # Function called after `_unload` during uninstall, utilize this to clean up processes and other remnants of your
     # plugin that may remain on the system
     async def _uninstall(self) -> None:
-        self._unload()
+        await self._unload()
         decky.logger.info('Uninstalling decky-zerotier...')
         # TODO: Clean up your plugin's resources here
         pass
